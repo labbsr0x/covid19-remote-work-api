@@ -4,26 +4,37 @@ import (
 	"flag"
 	"io/ioutil"
 	"net/http"
+	"time"
 
-	"github.com/Sirupsen/logrus"
 	"github.com/gorilla/mux"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/sirupsen/logrus"
 )
 
 var remoteKitBuilderAPI string
 
 func main() {
 
-	remoteKitBuilderAPI = *flag.String("remoteKitBuilderAPI", "http://localhost:3000", "Virtual Machine Image Builder URL")
-
 	logrus.SetLevel(logrus.DebugLevel)
+
+	remoteKitBuilderAPI = *flag.String("remoteKitBuilderAPI", "http://localhost:3000", "Virtual Machine Image Builder URL")
+	logrus.Infof("Starting Remote Kit Builder API")
+	logrus.Infof("remoteKitBuilderAPI=%s", remoteKitBuilderAPI)
 
 	router := mux.NewRouter()
 	router.Handle("/metrics", promhttp.Handler()).Methods("GET")
 	router.HandleFunc("/kit", requestKit).Methods("POST")
 	router.HandleFunc("/kit/{id}", getKit).Methods("GET")
 	logrus.Infof("Banco do Brasil COVID-19 Remote Work Kit API up and running!")
-	http.ListenAndServe(":8000", router)
+
+	srv := &http.Server{
+		Handler: router,
+		Addr:    "0.0.0.0:8000",
+		// Good practice: enforce timeouts for servers you create!
+		WriteTimeout: 30 * time.Second,
+		ReadTimeout:  30 * time.Second,
+	}
+	logrus.Fatal(srv.ListenAndServe())
 }
 
 func requestKit(w http.ResponseWriter, r *http.Request) {

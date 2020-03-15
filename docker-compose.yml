@@ -1,0 +1,13 @@
+version: '3.2'
+
+services:
+ 
+  covid19-remote-work-api:
+    image: bb.com.br/covid19-remote-work/api
+    build: .
+    restart: always
+    network_mode: bridge
+    ports:
+      - 8000:8000
+    environment: 
+      - REMOTE_KIT_BUILDER_API=http://localhost:8008
