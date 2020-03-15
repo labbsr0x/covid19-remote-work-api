@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"flag"
 	"io/ioutil"
 	"net/http"
@@ -11,15 +13,20 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var remoteKitBuilderAPI string
+// User is someone that has access to VPN
+type User struct {
+	Key string `json:"key,omitempty"`
+}
+
+var storageAPIURL string
 
 func main() {
 
 	logrus.SetLevel(logrus.DebugLevel)
 
-	remoteKitBuilderAPI = *flag.String("remoteKitBuilderAPI", "http://localhost:3000", "Virtual Machine Image Builder URL")
+	storageAPIURL = *flag.String("storageAPIURL", "http://localhost:3000", "Virtual Machine Image Builder URL")
 	logrus.Infof("Starting Remote Kit Builder API")
-	logrus.Infof("remoteKitBuilderAPI=%s", remoteKitBuilderAPI)
+	logrus.Infof("storageAPIURL=%s", storageAPIURL)
 
 	router := mux.NewRouter()
 	router.Handle("/metrics", promhttp.Handler()).Methods("GET")
@@ -38,10 +45,29 @@ func main() {
 }
 
 func requestKit(w http.ResponseWriter, r *http.Request) {
-	logrus.Debugf("Fazendo a requisição de criação do kit para %s", remoteKitBuilderAPI)
-	resp, err := http.Post(remoteKitBuilderAPI, "application/json", r.Body)
+	logrus.Debugf("Fazendo a requisição de criação do kit para %s", storageAPIURL)
+	client := &http.Client{}
+
+	var user User
+	err := json.NewDecoder(r.Body).Decode(&user)
 	if err != nil {
-		logrus.Errorf("Error requesting remote work kit to %s. Details: %s", remoteKitBuilderAPI, err)
+		logrus.Errorf("Error decoding Body of request to remote work kit %s. Details: %s", storageAPIURL, err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	json, err := json.Marshal(user)
+	if err != nil {
+		panic(err)
+	}
+	req, err := http.NewRequest("PUT", storageAPIURL, bytes.NewBuffer(json))
+	if err != nil {
+		logrus.Errorf("Error preparing remote work kit request to %s. Details: %s", storageAPIURL, err)
+	}
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	resp, err := client.Do(req)
+	if err != nil {
+		logrus.Errorf("Error requesting remote work kit request to %s. Details: %s", storageAPIURL, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode > 299 {
@@ -64,7 +90,7 @@ func requestKit(w http.ResponseWriter, r *http.Request) {
 func getKit(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
 	id := params["id"]
-	getRemoteKitURL := remoteKitBuilderAPI + "/" + id
+	getRemoteKitURL := storageAPIURL + "/" + id
 
 	logrus.Debugf("Fazendo a requisição de recuperação do kit para %s", getRemoteKitURL)
 	resp, err := http.Get(getRemoteKitURL)

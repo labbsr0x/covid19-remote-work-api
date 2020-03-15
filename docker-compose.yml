@@ -7,7 +7,21 @@ services:
     build: .
     restart: always
     network_mode: bridge
+    links:
+      - simple-file-server:simple-file-server
     ports:
       - 8000:8000
     environment: 
-      - REMOTE_KIT_BUILDER_API=http://localhost:8008
+      - STORAGE_API_URL=http://simple-file-server:4000
+  
+  simple-file-server:
+    image: flaviostutz/simple-file-server:1.0.1
+    restart: always
+    network_mode: bridge
+    ports:
+      - 4000:4000
+    environment:
+      - WRITE_SHARED_KEY=
+      - READ_SHARED_KEY=
+      - LOCATION_BASE_URL=http://localhost:4000
+      - LOG_LEVEL=debug
