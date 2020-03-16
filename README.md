@@ -3,5 +3,5 @@
 API for the remote work kit services
 
 ```
-go run main.go --storageAPIURL=http://localhost:4000 --baseURL=http://localhost:8000
+go run . --storageAPIURL=http://localhost:4000 --baseURL=http://localhost:8000
 ```
