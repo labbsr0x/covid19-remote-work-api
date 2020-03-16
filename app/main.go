@@ -23,11 +23,11 @@ type User struct {
 
 var storageAPIURL string
 var baseURL string
-var fileServerVMMetadataPath string
+var fileServerVMUsersPath string
 
 func main() {
 
-	fileServerVMMetadataPath = "/kits/vm/"
+	fileServerVMUsersPath = "/kit/users/"
 
 	logrus.Infof("Starting Remote Kit Builder API")
 	logrus.SetLevel(logrus.DebugLevel)
@@ -103,18 +103,21 @@ func updateRemoteKitURL(w http.ResponseWriter, r *http.Request) {
 	logrus.Debugf("Fazendo a requisição de criação do kit para %s", storageAPIURL)
 	client := &http.Client{}
 
+	params := mux.Vars(r)
+	key := strings.ToLower(params["key"])
+
+	if key == "" {
+		logrus.Error("Error processing your request. Your request URL must have the attribute `key`")
+		w.WriteHeader(400)
+		w.Write([]byte("Erro ao processar sua requisição. O body do request precisa ter o atributo `key` especificado"))
+	}
+
 	var requestBody map[string]string
 	err := json.NewDecoder(r.Body).Decode(&requestBody)
 	if err != nil {
 		logrus.Errorf("Error decoding Body of request to remote work kit %s. Details: %s", storageAPIURL, err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
-	}
-
-	if requestBody["key"] == "" {
-		logrus.Error("Error processing your request. Your request body must have the attribute `key`")
-		w.WriteHeader(400)
-		w.Write([]byte("Erro ao processar sua requisição. O body do request precisa ter o atributo `key` especificado"))
 	}
 
 	if requestBody["kitURL"] == "" {
@@ -128,10 +131,10 @@ func updateRemoteKitURL(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		logrus.Errorf("Error marshelling JSON response: %s", err)
 		w.WriteHeader(500)
-		w.Write([]byte(fmt.Sprintf("Erro ao atualizar URL para kit. Chave do usuário: %s. Error: %s", requestBody["key"], err)))
+		w.Write([]byte(fmt.Sprintf("Erro ao atualizar URL para kit. Chave do usuário: %s. Error: %s", key, err)))
 	}
 
-	remoteKitRequestURL := storageAPIURL + fileServerVMMetadataPath + requestBody["key"]
+	remoteKitRequestURL := storageAPIURL + fileServerVMUsersPath + key
 	req, err := http.NewRequest("PUT", remoteKitRequestURL, bytes.NewBuffer(requestBodyJSON))
 	if err != nil {
 		logrus.Errorf("Error preparing remote work kit request to %s. Details: %s", storageAPIURL, err)
@@ -159,9 +162,9 @@ func updateRemoteKitURL(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		downloadURL := baseURL + "/kit/" + strings.ToLower(requestBody["key"])
+		downloadURL := baseURL + "/kit/" + strings.ToLower(key)
 		resp := map[string]string{
-			"key":            requestBody["key"],
+			"key":            key,
 			"downloadURL":    downloadURL,
 			"additionalInfo": (storageAPIURL + string(result)),
 		}
@@ -169,7 +172,7 @@ func updateRemoteKitURL(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			logrus.Errorf("Error marshelling JSON response: %s", err)
 			w.WriteHeader(500)
-			w.Write([]byte(fmt.Sprintf("Erro ao criar requisição para kit. Chave do usuário: %s. Error: %s", requestBody["key"], err)))
+			w.Write([]byte(fmt.Sprintf("Erro ao criar requisição para kit. Chave do usuário: %s. Error: %s", key, err)))
 			return
 		}
 
@@ -202,7 +205,7 @@ func getKit(w http.ResponseWriter, r *http.Request) {
 }
 
 func getKitRequest(key string) (User, error) {
-	getRemoteKitURL := storageAPIURL + fileServerVMMetadataPath + strings.ToLower(key)
+	getRemoteKitURL := storageAPIURL + fileServerVMUsersPath + strings.ToLower(key)
 
 	logrus.Debugf("Fazendo a requisição de recuperação do kit para %s", getRemoteKitURL)
 	resp, err := http.Get(getRemoteKitURL)
@@ -219,12 +222,16 @@ func getKitRequest(key string) (User, error) {
 		return User{}, nil
 	}
 
-	var user User
-	err = json.NewDecoder(resp.Body).Decode(&user)
+	var retMap map[string]string
+	err = json.NewDecoder(resp.Body).Decode(&retMap)
+	logrus.Debugf("Received from file-server: %s", retMap)
 	if err != nil {
 		logrus.Errorf("Error decoding Body of request to remote work kit %s. Details: %s", storageAPIURL, err)
 		return User{}, err
 	}
 
-	return user, nil
+	return User{
+		Key:    key,
+		KitURL: retMap["kitURL"],
+	}, nil
 }
