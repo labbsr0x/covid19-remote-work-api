@@ -18,7 +18,7 @@ import (
 // User is someone that has access to VPN
 type User struct {
 	Key    string `json:"key,omitempty"`
-	KitURL string `json:"kitURL,empty"`
+	KitURL string `json:"kitDownloadURL,empty"`
 }
 
 var storageAPIURL string
@@ -66,7 +66,7 @@ func requestKit(w http.ResponseWriter, r *http.Request) {
 	}
 	user.Key = strings.ToLower(user.Key)
 
-	// checks whether a kit has been already issued to the user
+	// 1 - checks whether a kit has been already issued to the user
 	fetchedUser, err := getKitRequest(user.Key)
 	if err != nil {
 		w.WriteHeader(500)
@@ -80,11 +80,19 @@ func requestKit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 2 - Registers the remote work kit request made
+	requestBody := map[string]string{
+		"kitDownloadURL": "",
+	}
+	_, err = registerRemoteWorkRequest(user.Key, requestBody)
+
 	// Invoking Conductor to create the kit
-	downloadURL := baseURL + "/kit/" + strings.ToLower(user.Key)
+
+	// Building the kitDownloadURL
+	kitDownloadURL := baseURL + "/kit/" + strings.ToLower(user.Key)
 	resp := map[string]string{
-		"key":         user.Key,
-		"downloadURL": downloadURL,
+		"key":            user.Key,
+		"kitDownloadURL": kitDownloadURL,
 	}
 
 	bytes, err := json.Marshal(resp)
@@ -101,7 +109,6 @@ func requestKit(w http.ResponseWriter, r *http.Request) {
 
 func updateRemoteKitURL(w http.ResponseWriter, r *http.Request) {
 	logrus.Debugf("Fazendo a requisição de criação do kit para %s", storageAPIURL)
-	client := &http.Client{}
 
 	params := mux.Vars(r)
 	key := strings.ToLower(params["key"])
@@ -120,65 +127,27 @@ func updateRemoteKitURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if requestBody["kitURL"] == "" {
-		logrus.Error("Error processing your request. Your request body must have the attribute `kitURL`")
+	if requestBody["kitDownloadURL"] == "" {
+		logrus.Error("Error processing your request. Your request body must have the attribute `kitDownloadURL`")
 		w.WriteHeader(400)
-		w.Write([]byte("Erro ao processar sua requisição. O body do request precisa ter o atributo `kitURL` especificado"))
+		w.Write([]byte("Erro ao processar sua requisição. O body do request precisa ter o atributo `kitDownloadURL` especificado"))
 	}
-	requestBody["kitURL"] = strings.ToLower(requestBody["kitURL"])
+	requestBody["kitDownloadURL"] = strings.ToLower(requestBody["kitDownloadURL"])
 
-	requestBodyJSON, err := json.Marshal(requestBody)
+	// Update the current User "kitDownloadURL"
+	resp, err := registerRemoteWorkRequest(key, requestBody)
+	bytes, err := json.Marshal(resp)
+
 	if err != nil {
 		logrus.Errorf("Error marshelling JSON response: %s", err)
 		w.WriteHeader(500)
-		w.Write([]byte(fmt.Sprintf("Erro ao atualizar URL para kit. Chave do usuário: %s. Error: %s", key, err)))
-	}
-
-	remoteKitRequestURL := storageAPIURL + fileServerVMUsersPath + key
-	req, err := http.NewRequest("PUT", remoteKitRequestURL, bytes.NewBuffer(requestBodyJSON))
-	if err != nil {
-		logrus.Errorf("Error preparing remote work kit request to %s. Details: %s", storageAPIURL, err)
-	}
-	req.Header.Set("Content-Type", "application/json; charset=utf-8")
-	resp, err := client.Do(req)
-	if err != nil {
-		logrus.Errorf("Error requesting file server. Server: %s. Details: %s", storageAPIURL, err)
-		w.WriteHeader(500)
-		w.Write([]byte("Erro ao atualizar a URL do kit"))
+		w.Write([]byte(fmt.Sprintf("Erro ao atualizar a requisição para kits no storage. Chave do usuário: %s. Error: %s", key, err)))
 		return
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode > 299 {
-		logrus.Errorf("Error requesting kit creation. Code: %d", resp.StatusCode)
-		w.WriteHeader(resp.StatusCode)
-		w.Write([]byte("Erro na requisição de criação do kit."))
 
-	} else {
-		result, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			w.WriteHeader(500)
-			logrus.Errorf("Erro na conversão da resposta da requisição de criação do kit. Details: %s", err)
-			w.Write([]byte("Erro ao atualizar a URL do kit"))
-			return
-		}
+	w.WriteHeader(201)
+	w.Write(bytes)
 
-		downloadURL := baseURL + "/kit/" + strings.ToLower(key)
-		resp := map[string]string{
-			"key":            key,
-			"downloadURL":    downloadURL,
-			"additionalInfo": (storageAPIURL + string(result)),
-		}
-		bytes, err := json.Marshal(resp)
-		if err != nil {
-			logrus.Errorf("Error marshelling JSON response: %s", err)
-			w.WriteHeader(500)
-			w.Write([]byte(fmt.Sprintf("Erro ao criar requisição para kit. Chave do usuário: %s. Error: %s", key, err)))
-			return
-		}
-
-		w.WriteHeader(201)
-		w.Write(bytes)
-	}
 }
 
 func getKit(w http.ResponseWriter, r *http.Request) {
@@ -232,6 +201,51 @@ func getKitRequest(key string) (User, error) {
 
 	return User{
 		Key:    key,
-		KitURL: retMap["kitURL"],
+		KitURL: retMap["kitDownloadURL"],
 	}, nil
+}
+
+func registerRemoteWorkRequest(key string, requestBody map[string]string) (map[string]string, error) {
+
+	client := &http.Client{}
+
+	requestBodyJSON, err := json.Marshal(requestBody)
+	if err != nil {
+		logrus.Errorf("Error marshelling JSON response: %s", err)
+		return nil, fmt.Errorf("Erro ao atualizar URL para kit. Chave do usuário: %s. Error: %s", key, err)
+	}
+
+	remoteKitRequestURL := storageAPIURL + fileServerVMUsersPath + key
+	req, err := http.NewRequest("PUT", remoteKitRequestURL, bytes.NewBuffer(requestBodyJSON))
+	if err != nil {
+		logrus.Errorf("Error preparing remote work kit request to %s. Details: %s", storageAPIURL, err)
+		return nil, fmt.Errorf("Erro ao atualizar a URL do kit")
+	}
+
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	resp, err := client.Do(req)
+	if err != nil {
+		logrus.Errorf("Error requesting file server. Server: %s. Details: %s", storageAPIURL, err)
+		return nil, fmt.Errorf("Erro ao atualizar a URL do kit")
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode > 299 {
+		logrus.Errorf("Error requesting kit creation. Code: %d", resp.StatusCode)
+		return nil, fmt.Errorf("Erro na requisição de criação do kit %s", key)
+
+	}
+	result, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		logrus.Errorf("Erro na conversão da resposta da requisição de criação do kit. Details: %s", err)
+		return nil, fmt.Errorf("Erro ao atualizar a URL do kit")
+	}
+
+	kitURL := baseURL + "/kit/" + strings.ToLower(key)
+	ret := map[string]string{
+		"key":            key,
+		"kitURL":         kitURL,
+		"kitDownloadURL": string(result),
+	}
+
+	return ret, nil
 }
