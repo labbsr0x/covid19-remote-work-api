@@ -86,9 +86,15 @@ func requestKit(w http.ResponseWriter, r *http.Request) {
 	}
 	_, err = registerRemoteWorkRequest(user.Key, requestBody)
 
-	// Invoking Conductor to create the kit
+	// 3 - Invoking services that issues the certificates
 
-	// Building the kitDownloadURL
+	// 4 - Retrieving the users roles from Corporate Services
+
+	// 5 - Update the users roles on the OpenVPN Servers
+
+	// 6 - Invoking Conductor to create the kit
+
+	// 7 - Building the kitDownloadURL
 	kitDownloadURL := baseURL + "/kit/" + strings.ToLower(user.Key)
 	resp := map[string]string{
 		"key":            user.Key,
