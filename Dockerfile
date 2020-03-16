@@ -17,8 +17,6 @@ FROM alpine
 RUN apk add --no-cache ca-certificates
 COPY --from=builder /go/bin/covid19-remote-work-api /app/
 COPY startup.sh /app/
-COPY data/* /app/data/
-# COPY example.governo /app/example.governo
 
 WORKDIR /app
 CMD ["sh","startup.sh"]⏎

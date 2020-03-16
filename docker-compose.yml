@@ -13,6 +13,7 @@ services:
       - 8000:8000
     environment: 
       - STORAGE_API_URL=http://simple-file-server:4000
+      - BASE_URL=http://localhost:8000
   
   simple-file-server:
     image: flaviostutz/simple-file-server:1.0.1
