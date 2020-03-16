@@ -17,8 +17,8 @@ import (
 
 // User is someone that has access to VPN
 type User struct {
-	Key      string `json:"key,omitempty"`
-	ImageURL string `json:"imageURL,empty"`
+	Key    string `json:"key,omitempty"`
+	KitURL string `json:"kitURL,empty"`
 }
 
 var storageAPIURL string
@@ -27,7 +27,7 @@ var fileServerVMMetadataPath string
 
 func main() {
 
-	fileServerVMMetadataPath = "/kits/vm/meta/"
+	fileServerVMMetadataPath = "/kits/vm/"
 
 	logrus.Infof("Starting Remote Kit Builder API")
 	logrus.SetLevel(logrus.DebugLevel)
@@ -111,9 +111,20 @@ func updateRemoteKitURL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	requestBody["key"] = strings.ToLower(requestBody["key"])
+	if requestBody["key"] == "" {
+		logrus.Error("Error processing your request. Your request body must have the attribute `key`")
+		w.WriteHeader(400)
+		w.Write([]byte("Erro ao processar sua requisição. O body do request precisa ter o atributo `key` especificado"))
+	}
 
-	json, err := json.Marshal(requestBody)
+	if requestBody["kitURL"] == "" {
+		logrus.Error("Error processing your request. Your request body must have the attribute `kitURL`")
+		w.WriteHeader(400)
+		w.Write([]byte("Erro ao processar sua requisição. O body do request precisa ter o atributo `kitURL` especificado"))
+	}
+	requestBody["kitURL"] = strings.ToLower(requestBody["kitURL"])
+
+	requestBodyJSON, err := json.Marshal(requestBody)
 	if err != nil {
 		logrus.Errorf("Error marshelling JSON response: %s", err)
 		w.WriteHeader(500)
@@ -121,7 +132,7 @@ func updateRemoteKitURL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	remoteKitRequestURL := storageAPIURL + fileServerVMMetadataPath + requestBody["key"]
-	req, err := http.NewRequest("PUT", remoteKitRequestURL, bytes.NewBuffer(json))
+	req, err := http.NewRequest("PUT", remoteKitRequestURL, bytes.NewBuffer(requestBodyJSON))
 	if err != nil {
 		logrus.Errorf("Error preparing remote work kit request to %s. Details: %s", storageAPIURL, err)
 	}
@@ -135,7 +146,7 @@ func updateRemoteKitURL(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode > 299 {
-		logrus.Errorf("Error requesting kit creation. Code: %s", resp.StatusCode)
+		logrus.Errorf("Error requesting kit creation. Code: %d", resp.StatusCode)
 		w.WriteHeader(resp.StatusCode)
 		w.Write([]byte("Erro na requisição de criação do kit."))
 
@@ -148,26 +159,40 @@ func updateRemoteKitURL(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		downloadURL := baseURL + "/kit/" + strings.ToLower(requestBody["key"])
+		resp := map[string]string{
+			"key":            requestBody["key"],
+			"downloadURL":    downloadURL,
+			"additionalInfo": (storageAPIURL + string(result)),
+		}
+		bytes, err := json.Marshal(resp)
+		if err != nil {
+			logrus.Errorf("Error marshelling JSON response: %s", err)
+			w.WriteHeader(500)
+			w.Write([]byte(fmt.Sprintf("Erro ao criar requisição para kit. Chave do usuário: %s. Error: %s", requestBody["key"], err)))
+			return
+		}
+
 		w.WriteHeader(201)
-		w.Write(result)
+		w.Write(bytes)
 	}
 }
 
 func getKit(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
-	id := strings.ToLower(params["id"])
+	key := strings.ToLower(params["key"])
 
-	user, err := getKitRequest(id)
+	user, err := getKitRequest(key)
 
 	if err != nil {
 		w.WriteHeader(500)
-		w.Write([]byte(fmt.Sprintf("Erro ao recuperar o kit para o id: %s. Details: %s", id, err)))
+		w.Write([]byte(fmt.Sprintf("Erro ao recuperar o kit para a chave: %s. Details: %s", key, err)))
 		return
 	}
 
 	if user.Key == "" {
 		w.WriteHeader(404)
-		w.Write([]byte(fmt.Sprintf("Kit not found for user %s", id)))
+		w.Write([]byte(fmt.Sprintf("Kit not found for user %s", key)))
 		return
 	}
 
@@ -190,18 +215,16 @@ func getKitRequest(key string) (User, error) {
 		return User{}, nil
 	}
 	if resp.StatusCode > 299 {
-		logrus.Errorf("Error getting kit. Code: %s", resp.StatusCode)
-		var user User
-		err := json.NewDecoder(resp.Body).Decode(&user)
-		if err != nil {
-			logrus.Errorf("Error decoding Body of request to remote work kit %s. Details: %s", storageAPIURL, err)
-			return User{}, err
-		}
-
-		return user, nil
-
+		logrus.Errorf("Error getting kit. Code: %d", resp.StatusCode)
+		return User{}, nil
 	}
 
-	logrus.Debugf("User not found with key: %s", key)
-	return User{}, nil
+	var user User
+	err = json.NewDecoder(resp.Body).Decode(&user)
+	if err != nil {
+		logrus.Errorf("Error decoding Body of request to remote work kit %s. Details: %s", storageAPIURL, err)
+		return User{}, err
+	}
+
+	return user, nil
 }
