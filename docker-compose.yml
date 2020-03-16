@@ -12,8 +12,11 @@ services:
     ports:
       - 8000:8000
     environment: 
-      - STORAGE_API_URL=http://simple-file-server:4000
       - BASE_URL=http://localhost:8000
+      - STORAGE_API_URL=http://simple-file-server:4000
+      - CERTIFICATE_ISSUER_API_URL=http://domain.to.scep
+      - USER_ROLED_API_URL=http://domain.to.ldap
+      - CONDUCTOR_API_URL=http://conductor.to.ldap
   
   simple-file-server:
     image: flaviostutz/simple-file-server:1.0.1
